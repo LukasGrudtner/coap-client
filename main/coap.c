@@ -31,11 +31,10 @@
 
 #include "protocol_examples_common.h"
 
-#if 1
 /* Needed until coap_dtls.h becomes a part of libcoap proper */
 #include "libcoap.h"
 #include "coap_dtls.h"
-#endif
+
 #include "coap.h"
 
 #define COAP_DEFAULT_TIME_SEC 5
@@ -95,90 +94,9 @@ extern uint8_t client_key_start[] asm("_binary_coap_client_key_start");
 extern uint8_t client_key_end[]   asm("_binary_coap_client_key_end");
 #endif /* CONFIG_COAP_MBEDTLS_PKI */
 
-#include "driver/uart.h"
-#include "driver/gpio.h"
-
-/**
- * This is an example which echos any data it receives on configured UART back to the sender,
- * with hardware flow control turned off. It does not use UART driver event queue.
- *
- * - Port: configured UART
- * - Receive (Rx) buffer: on
- * - Transmit (Tx) buffer: off
- * - Flow control: off
- * - Event queue: off
- * - Pin assignment: see defines below (See Kconfig)
- */
-
-#define ECHO_TEST_TXD (CONFIG_EXAMPLE_UART_TXD)
-#define ECHO_TEST_RXD (CONFIG_EXAMPLE_UART_RXD)
-#define ECHO_TEST_RTS (UART_PIN_NO_CHANGE)
-#define ECHO_TEST_CTS (UART_PIN_NO_CHANGE)
-
-#define ECHO_UART_PORT_NUM      (CONFIG_EXAMPLE_UART_PORT_NUM)
-#define ECHO_UART_BAUD_RATE     (CONFIG_EXAMPLE_UART_BAUD_RATE)
-#define ECHO_TASK_STACK_SIZE    (CONFIG_EXAMPLE_TASK_STACK_SIZE)
-
-#define BUF_SIZE (1024)
-
-typedef struct Payload
-{
-    float temperature;
-    float pressure;
-    float altitude;
-} Payload;
-
-Payload payload;
-
-static void setup_uart()
-{
-    /* Configure parameters of an UART driver,
-     * communication pins and install the driver */
-    uart_config_t uart_config = {
-            .baud_rate = ECHO_UART_BAUD_RATE,
-            .data_bits = UART_DATA_8_BITS,
-            .parity    = UART_PARITY_DISABLE,
-            .stop_bits = UART_STOP_BITS_1,
-            .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
-            .source_clk = UART_SCLK_APB,
-    };
-    int intr_alloc_flags = 0;
-
-#if CONFIG_UART_ISR_IN_IRAM
-    intr_alloc_flags = ESP_INTR_FLAG_IRAM;
-#endif
-
-    ESP_ERROR_CHECK(uart_driver_install(ECHO_UART_PORT_NUM, BUF_SIZE * 2, 0, 0, NULL, intr_alloc_flags));
-    ESP_ERROR_CHECK(uart_param_config(ECHO_UART_PORT_NUM, &uart_config));
-    ESP_ERROR_CHECK(uart_set_pin(ECHO_UART_PORT_NUM, ECHO_TEST_TXD, ECHO_TEST_RXD, ECHO_TEST_RTS, ECHO_TEST_CTS));
-}
-
-static void listen_uart()
-{
-    while (1) {
-        // Read data from the UART
-        int len = uart_read_bytes(ECHO_UART_PORT_NUM, &payload, sizeof(Payload), 20 / portTICK_RATE_MS);
-        printf(".");
-        if (len) {
-            printf("\n\nReceived %d bytes\n", len);
-            printf("\nTemperature: %.2f °C", payload.temperature);
-            printf("\nPressure: %.2f Pa", payload.pressure);
-            printf("\nAltitude: %.2f m", payload.altitude);
-            printf("\n\n");
-        }
-    }
-}
-
-static void uart_task(void *arg)
-{
-    setup_uart();
-    listen_uart();
-}
-
 static void message_handler(coap_context_t *ctx, coap_session_t *session,
                             coap_pdu_t *sent, coap_pdu_t *received,
-                            const coap_tid_t id)
-{
+                            const coap_tid_t id) {
     unsigned char *data = NULL;
     size_t data_len;
     coap_pdu_t *pdu = NULL;
@@ -194,12 +112,12 @@ static void message_handler(coap_context_t *ctx, coap_session_t *session,
         if (block_opt) {
             uint16_t blktype = opt_iter.type;
 
-            if (coap_opt_block_num(block_opt) == 0) {
-                printf("Received:\n");
-            }
-            if (coap_get_data(received, &data_len, &data)) {
-                printf("%.*s", (int)data_len, data);
-            }
+//            if (coap_opt_block_num(block_opt) == 0) {
+//                printf("Received:\n");
+//            }
+//            if (coap_get_data(received, &data_len, &data)) {
+//                printf("%.*s", (int)data_len, data);
+//            }
             if (COAP_OPT_BLOCK_MORE(block_opt)) {
                 /* more bit is set */
 
@@ -214,17 +132,16 @@ static void message_handler(coap_context_t *ctx, coap_session_t *session,
                 pdu->code = COAP_REQUEST_GET;
 
                 /* add URI components from optlist */
-                for (option = optlist; option; option = option->next ) {
+                for (option = optlist; option; option = option->next) {
                     switch (option->number) {
-                    case COAP_OPTION_URI_HOST :
-                    case COAP_OPTION_URI_PORT :
-                    case COAP_OPTION_URI_PATH :
-                    case COAP_OPTION_URI_QUERY :
-                        coap_add_option(pdu, option->number, option->length,
-                                        option->data);
-                        break;
-                    default:
-                        ;     /* skip other options */
+                        case COAP_OPTION_URI_HOST :
+                        case COAP_OPTION_URI_PORT :
+                        case COAP_OPTION_URI_PATH :
+                        case COAP_OPTION_URI_QUERY :
+                            coap_add_option(pdu, option->number, option->length,
+                                            option->data);
+                            break;
+                        default:;     /* skip other options */
                     }
                 }
 
@@ -244,14 +161,15 @@ static void message_handler(coap_context_t *ctx, coap_session_t *session,
                     return;
                 }
             }
-            printf("\n");
-        } else {
-            if (coap_get_data(received, &data_len, &data)) {
-                printf("Received: %.*s\n", (int)data_len, data);
-            }
+//            printf("\n");
         }
+//       else {
+//            if (coap_get_data(received, &data_len, &data)) {
+//                printf("Received: %.*s\n", (int)data_len, data);
+//            }
+//        }
     }
-clean_up:
+    clean_up:
     resp_wait = 0;
 }
 
@@ -273,12 +191,21 @@ verify_cn_callback(const char *cn,
 }
 #endif /* CONFIG_COAP_MBEDTLS_PKI */
 
-static void coap_example_client(void *p)
+static void coap_example_client(void *pvParameters)
 {
+    Payload data;
+    memcpy(&data, pvParameters, sizeof(Payload));
+
+    printf("\n\npvParameters received\n");
+    printf("\nTemperature: %.2f °C", data.temperature);
+    printf("\nPressure: %.2f Pa", data.pressure);
+    printf("\nAltitude: %.2f m", data.altitude);
+    printf("\n\n");
+
     struct hostent *hp;
-    coap_address_t    dst_addr;
+    coap_address_t dst_addr;
     static coap_uri_t uri;
-    const char       *server_uri = COAP_DEFAULT_DEMO_URI;
+    const char *server_uri = COAP_DEFAULT_DEMO_URI;
     char *phostname = NULL;
 
     coap_set_log_level(EXAMPLE_COAP_LOG_DEFAULT_LEVEL);
@@ -294,7 +221,7 @@ static void coap_example_client(void *p)
         coap_pdu_t *request = NULL;
 
         optlist = NULL;
-        if (coap_split_uri((const uint8_t *)server_uri, strlen(server_uri), &uri) == -1) {
+        if (coap_split_uri((const uint8_t *) server_uri, strlen(server_uri), &uri) == -1) {
             ESP_LOGE(TAG, "CoAP server uri error");
             break;
         }
@@ -308,7 +235,7 @@ static void coap_example_client(void *p)
             break;
         }
 
-        phostname = (char *)calloc(1, uri.host.length + 1);
+        phostname = (char *) calloc(1, uri.host.length + 1);
         if (phostname == NULL) {
             ESP_LOGE(TAG, "calloc failed");
             break;
@@ -328,15 +255,15 @@ static void coap_example_client(void *p)
         coap_address_init(&dst_addr);
         switch (hp->h_addrtype) {
             case AF_INET:
-                dst_addr.addr.sin.sin_family      = AF_INET;
-                dst_addr.addr.sin.sin_port        = htons(uri.port);
+                dst_addr.addr.sin.sin_family = AF_INET;
+                dst_addr.addr.sin.sin_port = htons(uri.port);
                 memcpy(&dst_addr.addr.sin.sin_addr, hp->h_addr, sizeof(dst_addr.addr.sin.sin_addr));
                 inet_ntop(AF_INET, &dst_addr.addr.sin.sin_addr, tmpbuf, sizeof(tmpbuf));
                 ESP_LOGI(TAG, "DNS lookup succeeded. IP=%s", tmpbuf);
                 break;
             case AF_INET6:
-                dst_addr.addr.sin6.sin6_family      = AF_INET6;
-                dst_addr.addr.sin6.sin6_port        = htons(uri.port);
+                dst_addr.addr.sin6.sin6_family = AF_INET6;
+                dst_addr.addr.sin6.sin6_port = htons(uri.port);
                 memcpy(&dst_addr.addr.sin6.sin6_addr, hp->h_addr, sizeof(dst_addr.addr.sin6.sin6_addr));
                 inet_ntop(AF_INET6, &dst_addr.addr.sin6.sin6_addr, tmpbuf, sizeof(tmpbuf));
                 ESP_LOGI(TAG, "DNS lookup succeeded. IP=%s", tmpbuf);
@@ -495,7 +422,7 @@ static void coap_example_client(void *p)
                 }
             }
         }
-clean_up:
+        clean_up:
         if (optlist) {
             coap_delete_optlist(optlist);
             optlist = NULL;
@@ -517,19 +444,15 @@ clean_up:
     vTaskDelete(NULL);
 }
 
-void app_main(void)
+static void setup_coap()
 {
-//    ESP_ERROR_CHECK( nvs_flash_init() );
-//    ESP_ERROR_CHECK(esp_netif_init());
-//    ESP_ERROR_CHECK(esp_event_loop_create_default());
-//
-//    /* This helper function configures Wi-Fi or Ethernet, as selected in menuconfig.
-//     * Read "Establishing Wi-Fi or Ethernet Connection" section in
-//     * examples/protocols/README.md for more information about this function.
-//     */
-//    ESP_ERROR_CHECK(example_connect());
-//
-//    xTaskCreate(coap_example_client, "coap", 8 * 1024, NULL, 5, NULL);
+    ESP_ERROR_CHECK( nvs_flash_init() );
+    ESP_ERROR_CHECK(esp_netif_init());
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
 
-    xTaskCreate(uart_task, "uart_echo_task", ECHO_TASK_STACK_SIZE, NULL, 10, NULL);
+    /* This helper function configures Wi-Fi or Ethernet, as selected in menuconfig.
+     * Read "Establishing Wi-Fi or Ethernet Connection" section in
+     * examples/protocols/README.md for more information about this function.
+     */
+    ESP_ERROR_CHECK(example_connect());
 }
