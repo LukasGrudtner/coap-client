@@ -15,6 +15,7 @@
  */
 
 #include <string.h>
+#include <stdio.h>
 #include <sys/socket.h>
 #include <netdb.h>
 #include <sys/param.h>
@@ -73,6 +74,7 @@ const static char *TAG = "CoAP_client";
 
 static int resp_wait = 1;
 static coap_optlist_t *optlist = NULL;
+static coap_string_t payload = { 0, NULL };       /* optional payload to send */
 static int wait_ms;
 
 #ifdef CONFIG_COAP_MBEDTLS_PKI
@@ -94,6 +96,27 @@ extern uint8_t client_key_start[] asm("_binary_coap_client_key_start");
 extern uint8_t client_key_end[]   asm("_binary_coap_client_key_end");
 #endif /* CONFIG_COAP_MBEDTLS_PKI */
 
+/**
+ * Calculates decimal value from hexadecimal ASCII character given in
+ * @p c. The caller must ensure that @p c actually represents a valid
+ * heaxdecimal character, e.g. with isxdigit(3).
+ *
+ * @hideinitializer
+ */
+#define hexchar_to_dec(c) ((c) & 0x40 ? ((c) & 0x0F) + 9 : ((c) & 0x0F))
+
+static void decode_segment(const uint8_t *seg, size_t length, unsigned char *buf) {
+    while (length--) {
+        if (*seg == '%') {
+            *buf = (hexchar_to_dec(seg[1]) << 4) + hexchar_to_dec(seg[2]);
+            seg += 2; length -= 2;
+        } else {
+            *buf = *seg;
+        }
+        ++buf; ++seg;
+    }
+}
+
 static void message_handler(coap_context_t *ctx, coap_session_t *session,
                             coap_pdu_t *sent, coap_pdu_t *received,
                             const coap_tid_t id) {
@@ -112,12 +135,6 @@ static void message_handler(coap_context_t *ctx, coap_session_t *session,
         if (block_opt) {
             uint16_t blktype = opt_iter.type;
 
-//            if (coap_opt_block_num(block_opt) == 0) {
-//                printf("Received:\n");
-//            }
-//            if (coap_get_data(received, &data_len, &data)) {
-//                printf("%.*s", (int)data_len, data);
-//            }
             if (COAP_OPT_BLOCK_MORE(block_opt)) {
                 /* more bit is set */
 
@@ -161,13 +178,12 @@ static void message_handler(coap_context_t *ctx, coap_session_t *session,
                     return;
                 }
             }
-//            printf("\n");
+            printf("\n");
+        } else {
+            if (coap_get_data(received, &data_len, &data)) {
+                printf("=== Received ===\n%.*s\n\n", (int)data_len, data);
+            }
         }
-//       else {
-//            if (coap_get_data(received, &data_len, &data)) {
-//                printf("Received: %.*s\n", (int)data_len, data);
-//            }
-//        }
     }
     clean_up:
     resp_wait = 0;
@@ -196,11 +212,11 @@ static void coap_example_client(void *pvParameters)
     Payload data;
     memcpy(&data, pvParameters, sizeof(Payload));
 
-    printf("\n\npvParameters received\n");
-    printf("\nTemperature: %.2f °C", data.temperature);
-    printf("\nPressure: %.2f Pa", data.pressure);
-    printf("\nAltitude: %.2f m", data.altitude);
-    printf("\n\n");
+    size_t len = 0;
+    len = snprintf(NULL, len, "Temperature = %.2f °C\nPressure = %.2f Pa\nAltitude = %.2f m", (double) data.temperature, (double) data.pressure, (double) data.altitude);
+
+    char buffer[len+1];
+    snprintf(buffer, len+1, "Temperature = %.2f °C\nPressure = %.2f Pa\nAltitude = %.2f m", (double) data.temperature, (double) data.pressure, (double) data.altitude);
 
     struct hostent *hp;
     coap_address_t dst_addr;
@@ -401,10 +417,21 @@ static void coap_example_client(void *pvParameters)
             ESP_LOGE(TAG, "coap_new_pdu() failed");
             goto clean_up;
         }
+
+        /* Set request options. */
         request->type = COAP_MESSAGE_CON;
         request->tid = coap_new_message_id(session);
-        request->code = COAP_REQUEST_GET;
+        request->code = COAP_REQUEST_POST;
         coap_add_optlist_pdu(request, &optlist);
+
+        /* Set request payload. */
+        size_t length = sizeof(buffer);
+        payload.s = (unsigned char *) coap_malloc(length);
+        payload.length = length;
+        decode_segment((const uint8_t *) &buffer, length, payload.s);
+        coap_add_data(request, payload.length, payload.s);
+
+        printf("=== Sent ===\n%.*s\n\n", (int) length, buffer);
 
         resp_wait = 1;
         coap_send(session, request);
