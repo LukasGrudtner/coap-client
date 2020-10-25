@@ -26,7 +26,7 @@ menu "Example CoAP Client Configuration"
 
 endmenu
 
-menu "Echo Example Configuration"
+menu "Example UART Configuration"
 
     config EXAMPLE_UART_PORT_NUM
         int "UART port number"
